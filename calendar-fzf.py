@@ -12,10 +12,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 import calendar_info
-
 # import convert_format
 # import fzf_options
-# import internal_server
+import internal_server
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PICKLE_PATH = f"{SCRIPT_DIR}/GoogleCalendarApi.pickle"
@@ -67,7 +66,15 @@ def get_events(start, end):
 
 
 def get_visible_events(events):
-    return [f'{e["start"]["dateTime"][11:16]} {e["summary"]}' for e in events]
+    return [
+        f'{e["id"]} {e["start"]["dateTime"]} {e["end"]["dateTime"]} {e["summary"]}'
+        for e in events
+    ]
+
+
+def get_event_for_stdout(event):
+    sp = event.split(" ")
+    return f'{sp[1]} {" ".join(sp[3:])}'
 
 
 def execute_fzf(events, server_port, fzf_port):
@@ -77,6 +84,13 @@ def execute_fzf(events, server_port, fzf_port):
         str(fzf_port),
         "--multi",
         "--reverse",
+        "--print-query",
+        "--expect",
+        "enter",
+        "--with-nth",
+        "2,4..",
+        "--bind",
+        f"alt-e:execute-silent(python {SCRIPT_DIR}/calendar_editor.py {server_port} {{+}})",
     ]
 
     proc = subprocess.run(cmd, input="\n".join(events), stdout=PIPE, text=True)
@@ -91,22 +105,22 @@ def find_available_port():
 def main(args, options):
     start = get_start(args[1])
     end = get_end(start)
-    events = get_events(start, end)
-    visible_events = get_visible_events(events)
+    original_events = get_events(start, end)
+    visible_events = get_visible_events(original_events)
 
-    # server_port = internal_server.start_server()
-    server_port = 0
+    server_port = internal_server.start_server(original_events)
     fzf_port = find_available_port()
-    # internal_server.set_fzf_port(fzf_port)
+    internal_server.set_fzf_port(fzf_port)
+    internal_server.set_original_events(original_events)
 
     stdout = execute_fzf(visible_events, server_port, fzf_port)
-
-    """
     if len(stdout.strip()) > 0:
-        args = stdout.rstrip().split("\n")
-        input_json = internal_server.get_input_json_from_memory()
-        print(fzf_options.get_selected_part_text(input_json, args))
-    """
+        sp = stdout.split("\n")
+        # query = sp[0]
+        key = sp[1]
+        events = sp[2:-1]
+
+        print("\n".join([get_event_for_stdout(e) for e in events]))
 
 
 if __name__ == "__main__":
